@@ -13,13 +13,11 @@ async function loadPdfjsOnce() {
     throw new Error("ProLand PDF Embed: missing PDF.js paths (pdfjsDisplaySrc/pdfjsWorkerSrc).");
   }
 
-  loadingPromise = import(displaySrc).then((mod) => {
-    // PDF.js ESM exports
-    // set worker via GlobalWorkerOptions
-    mod.GlobalWorkerOptions.workerSrc = workerSrc;
-    pdfjs = mod;
-    return pdfjs;
-  });
+loadingPromise = import(displaySrc).then((mod) => {
+  mod.GlobalWorkerOptions.workerSrc = workerSrc;
+  pdfjs = mod;
+  return pdfjs;
+});
 
   return loadingPromise;
 }
