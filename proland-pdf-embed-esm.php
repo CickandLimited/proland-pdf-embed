@@ -17,31 +17,28 @@ class ProLand_PDF_Embed_ESM {
     }
 
     public function register_assets() {
-        // Register (don’t enqueue globally)
-        wp_register_script(
-            self::HANDLE,
-            plugin_dir_url(__FILE__) . 'assets/js/pdf-embed.js',
-            [],
-            '1.0.0',
-            true
-        );
+    $handle = self::HANDLE;
+    $base = plugin_dir_url(__FILE__);
 
-        // Ensure WP prints as <script type="module">
-        add_filter('script_loader_tag', function($tag, $handle, $src) {
-            if ($handle === self::HANDLE) {
-                return '<script type="module" src="' . esc_url($src) . '"></script>';
-            }
-            return $tag;
-        }, 10, 3);
+    wp_register_script(
+        $handle,
+        $base . 'assets/js/pdf-embed.js',
+        [],
+        '1.0.0',
+        true
+    );
 
-        // Pass paths into the module
-        wp_localize_script(self::HANDLE, 'ProLandPdfEmbedESM', [
-            'pdfjsDisplaySrc' => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.js',
-            'pdfjsWorkerSrc'  => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.worker.js',
-            'defaultMaxWidth' => 1100,
-            'defaultPadding'  => 16
-        ]);
-    }
+    // IMPORTANT: make it a module script so `import()` works
+    wp_script_add_data($handle, 'type', 'module');
+
+    wp_localize_script($handle, 'ProLandPdfEmbedESM', [
+        'pdfjsDisplaySrc' => $base . 'assets/pdfjs/build/pdf.js',
+        'pdfjsWorkerSrc'  => $base . 'assets/pdfjs/build/pdf.worker.js',
+        'defaultMaxWidth' => 1100,
+        'defaultPadding'  => 16
+    ]);
+}
+
 
     public function shortcode($atts) {
         $atts = shortcode_atts([
