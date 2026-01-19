@@ -45,6 +45,27 @@ function setStatus(root, html) {
   status.innerHTML = html;
 }
 
+// Minimal link service shim for ESM builds where SimpleLinkService isn't exposed
+function makeLinkService() {
+  return {
+    getDestinationHash(dest) {
+      // internal destinations (not needed for external links)
+      if (!dest) return "";
+      return "#";
+    },
+    getAnchorUrl(hash) {
+      return hash || "#";
+    },
+    goToDestination(dest) {
+      // noop (we're not implementing internal navigation)
+      // external URI links don't rely on this
+    },
+    executeNamedAction(action) {
+      // noop
+    },
+  };
+}
+
 async function renderEmbed(root) {
   const pdfUrl = root.getAttribute("data-pdf-url");
   const maxWidth = parseInt(root.getAttribute("data-max-width") || "1100", 10);
@@ -59,19 +80,18 @@ async function renderEmbed(root) {
 
     setStatus(root, "Loading document…");
 
-    // Enable forms + annotations
-    // These flags cover both "URI links" and "widget annotations" (button/form links)
     const loadingTask = pdfjsLib.getDocument({
       url: pdfUrl,
-      enableXfa: false, // keep off unless you know it's XFA; safer for performance
+      enableXfa: false,
     });
 
     const pdf = await loadingTask.promise;
 
     clearStatus(root);
 
-    // Storage for form fields / widget annotations
-    const annotationStorage = new pdfjsLib.AnnotationStorage();
+    const annotationStorage = pdfjsLib.AnnotationStorage
+      ? new pdfjsLib.AnnotationStorage()
+      : null;
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -106,7 +126,7 @@ async function renderEmbed(root) {
 
       renderedAnyPage = true;
 
-      // Annotation layer (links + form widgets)
+      // Annotation layer (links + widgets)
       try {
         const annLayer = document.createElement("div");
         annLayer.className = "annotationLayer";
@@ -122,34 +142,35 @@ async function renderEmbed(root) {
 
         const annotations = await page.getAnnotations({ intent: "display" });
 
-        // Helpful debug (remove later if you want)
-        // Look for subtype: "Link" or "Widget"
-        console.log(`[ProLand PDF Embed] Page ${pageNum} annotations:`, annotations);
+        // Use shim, since SimpleLinkService isn't available in your build
+        const linkService = makeLinkService();
 
-        const linkService = new pdfjsLib.SimpleLinkService();
-
-        // Some PDF.js versions use constants, some use numbers; handle both
         const renderAnnotationMode =
           typeof pdfjsLib.AnnotationMode !== "undefined"
             ? pdfjsLib.AnnotationMode.ENABLE
             : 1;
 
         if (pdfjsLib.AnnotationLayer?.render) {
-          pdfjsLib.AnnotationLayer.render({
+          const opts = {
             viewport: scaledViewport.clone({ dontFlip: true }),
             div: annLayer,
             annotations,
             page,
             linkService,
-            annotationStorage,
             renderForms: true,
+            mimicDefaultAppearance: true,
             renderAnnotationMode,
-          });
+          };
+
+          // Some versions accept annotationStorage; include if available
+          if (annotationStorage) opts.annotationStorage = annotationStorage;
+
+          pdfjsLib.AnnotationLayer.render(opts);
         } else {
           console.warn("ProLand PDF Embed: AnnotationLayer.render not available in this PDF.js build.");
         }
 
-        // Keep annotation layer aligned when responsive
+        // Keep overlay aligned when responsive
         const resize = () => {
           const displayedWidth = pageWrap.clientWidth;
           const factor = displayedWidth / canvas.width;
