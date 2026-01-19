@@ -6,6 +6,7 @@
  * Author: Kris Rabai - Veritium Support Services Ltd
  */
 
+
 if (!defined('ABSPATH')) exit;
 
 class ProLand_PDF_Embed_ESM {
@@ -16,47 +17,45 @@ class ProLand_PDF_Embed_ESM {
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
     }
 
- public function register_assets() {
-    $handle = self::HANDLE;
-    $base   = plugin_dir_url(__FILE__);
+    public function register_assets() {
+        $handle = self::HANDLE;
+        $base   = plugin_dir_url(__FILE__);
 
-    // PDF embed JS (ES module)
-    wp_register_script(
-        $handle,
-        $base . 'assets/js/pdf-embed.js',
-        [],
-        '1.0.0',
-        true
-    );
+        // Frontend module script (must be type="module")
+        wp_register_script(
+            $handle,
+            $base . 'assets/js/pdf-embed.js',
+            [],
+            '1.0.0',
+            true
+        );
 
-    // IMPORTANT: ensure this is output as <script type="module">
-    wp_script_add_data($handle, 'type', 'module');
+        // Ensure it prints as: <script type="module" ...>
+        wp_script_add_data($handle, 'type', 'module');
 
-    // PDF.js viewer / annotation CSS (required for clickable links)
-    wp_register_style(
-        'proland-pdfjs-viewer',
-        $base . 'assets/pdfjs/web/viewer.css',
-        [],
-        '4.6.82'
-    );
+        // PDF.js viewer CSS includes annotation/link hitboxes
+        wp_register_style(
+            'proland-pdfjs-viewer',
+            $base . 'assets/pdfjs/web/viewer.css',
+            [],
+            '4.6.82'
+        );
 
-    // Expose paths to the module
-    wp_localize_script($handle, 'ProLandPdfEmbedESM', [
-        'pdfjsDisplaySrc' => $base . 'assets/pdfjs/build/pdf.js',
-        'pdfjsWorkerSrc'  => $base . 'assets/pdfjs/build/pdf.worker.js',
-        'defaultMaxWidth' => 1100,
-        'defaultPadding'  => 16
-    ]);
-}
-
-
+        // Pass required paths to the module
+        wp_localize_script($handle, 'ProLandPdfEmbedESM', [
+            'pdfjsDisplaySrc' => $base . 'assets/pdfjs/build/pdf.js',
+            'pdfjsWorkerSrc'  => $base . 'assets/pdfjs/build/pdf.worker.js',
+            'defaultMaxWidth' => 1100,
+            'defaultPadding'  => 16
+        ]);
+    }
 
     public function shortcode($atts) {
         $atts = shortcode_atts([
             'url'       => '',
             'max_width' => '1100',
             'padding'   => '16',
-            'class'     => ''
+            'class'     => '',
         ], $atts, 'proland_pdf');
 
         $url = esc_url_raw($atts['url']);
@@ -66,7 +65,8 @@ class ProLand_PDF_Embed_ESM {
             </div>';
         }
 
-        // Enqueue the module script only when shortcode is used
+        // Enqueue CSS + JS ONLY when shortcode is present
+        wp_enqueue_style('proland-pdfjs-viewer');
         wp_enqueue_script(self::HANDLE);
 
         $id = 'proland-pdf-' . wp_generate_uuid4();
@@ -77,6 +77,7 @@ class ProLand_PDF_Embed_ESM {
         $padding = intval($atts['padding']);
         if ($padding < 0) $padding = 0;
 
+        // Safe-ish extra class
         $class = preg_replace('/[^a-zA-Z0-9_-]/', '', $atts['class']);
 
         ob_start(); ?>
@@ -89,10 +90,11 @@ class ProLand_PDF_Embed_ESM {
             style="max-width:<?php echo esc_attr($max_width); ?>px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;"
         >
             <div class="proland-pdf-pages" style="background:#fff;padding:<?php echo esc_attr($padding); ?>px;">
-                <div class="proland-pdf-status" style="padding:12px;border:1px solid #eee;border-radius:10px;">
+                <div class="proland-pdf-status" style="padding:12px;border:1px solid #eee;border-radius:10px;margin-bottom:12px;background:#fff;">
                     Loading document…
                 </div>
             </div>
+
             <noscript>
                 <div style="padding:12px;">
                     This PDF requires JavaScript. <a href="<?php echo esc_url($url); ?>">Open the PDF</a>.

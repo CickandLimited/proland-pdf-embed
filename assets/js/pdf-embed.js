@@ -13,8 +13,9 @@ async function loadPdfjsOnce() {
     throw new Error("ProLand PDF Embed: missing PDF.js paths (pdfjsDisplaySrc/pdfjsWorkerSrc).");
   }
 
+  // Dynamic import of the PDF.js display layer
   loadingPromise = import(displaySrc).then((mod) => {
-    // PDF.js ESM exports
+    // Worker config
     mod.GlobalWorkerOptions.workerSrc = workerSrc;
     pdfjs = mod;
     return pdfjs;
@@ -87,17 +88,21 @@ async function renderEmbed(root) {
       canvas.style.display = "block";
       canvas.style.width = "100%";
       canvas.style.height = "auto";
+
+      // Ensure the canvas does not swallow clicks (annotation layer sits above)
+      canvas.style.pointerEvents = "none";
+
       pageWrap.appendChild(canvas);
 
       await page.render({
         canvasContext: ctx,
         viewport: scaledViewport,
-        background: "white"
+        background: "white",
       }).promise;
 
       renderedAnyPage = true;
 
-      // Annotation layer (links) — isolate failures so rendering still counts as success
+      // Annotation layer (links)
       try {
         const annLayer = document.createElement("div");
         annLayer.style.position = "absolute";
@@ -107,6 +112,11 @@ async function renderEmbed(root) {
         annLayer.style.height = canvas.height + "px";
         annLayer.style.transformOrigin = "0 0";
         annLayer.style.pointerEvents = "auto";
+        annLayer.style.zIndex = "10";
+
+        // PDF.js viewer.css expects this class name
+        annLayer.className = "annotationLayer";
+
         pageWrap.appendChild(annLayer);
 
         const annotations = await page.getAnnotations();
@@ -118,13 +128,13 @@ async function renderEmbed(root) {
             div: annLayer,
             annotations,
             page,
-            linkService
+            linkService,
           });
         } else {
           console.warn("ProLand PDF Embed: AnnotationLayer.render not available in this PDF.js build.");
         }
 
-        // Keep annotation layer aligned on resize (guard for environments without ResizeObserver)
+        // Keep annotation layer aligned when responsive
         const resize = () => {
           const displayedWidth = pageWrap.clientWidth;
           const factor = displayedWidth / canvas.width;
@@ -135,22 +145,18 @@ async function renderEmbed(root) {
         if (typeof ResizeObserver !== "undefined") {
           new ResizeObserver(resize).observe(pageWrap);
         } else {
-          // Fallback
           window.addEventListener("resize", resize, { passive: true });
         }
       } catch (annErr) {
-        console.warn("ProLand PDF Embed: annotation layer failed (links may not work on this page).", annErr);
-        // Do NOT throw — keep the PDF visible
+        console.warn("ProLand PDF Embed: annotation layer failed (links may not work).", annErr);
       }
     }
   } catch (err) {
     console.error("ProLand PDF Embed: render failed.", err);
 
-    // If we already rendered something, don't show the scary banner
     if (!renderedAnyPage) {
       setStatus(root, `Could not display PDF. <a href="${pdfUrl}">Open the PDF</a>.`);
     } else {
-      // Quietly remove any status if it exists
       clearStatus(root);
     }
   }
