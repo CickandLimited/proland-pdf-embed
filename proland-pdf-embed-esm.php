@@ -16,10 +16,11 @@ class ProLand_PDF_Embed_ESM {
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
     }
 
-    public function register_assets() {
+ public function register_assets() {
     $handle = self::HANDLE;
-    $base = plugin_dir_url(__FILE__);
+    $base   = plugin_dir_url(__FILE__);
 
+    // PDF embed JS (ES module)
     wp_register_script(
         $handle,
         $base . 'assets/js/pdf-embed.js',
@@ -28,9 +29,18 @@ class ProLand_PDF_Embed_ESM {
         true
     );
 
-    // IMPORTANT: make it a module script so `import()` works
+    // IMPORTANT: ensure this is output as <script type="module">
     wp_script_add_data($handle, 'type', 'module');
 
+    // PDF.js viewer / annotation CSS (required for clickable links)
+    wp_register_style(
+        'proland-pdfjs-viewer',
+        $base . 'assets/pdfjs/web/viewer.css',
+        [],
+        '4.6.82'
+    );
+
+    // Expose paths to the module
     wp_localize_script($handle, 'ProLandPdfEmbedESM', [
         'pdfjsDisplaySrc' => $base . 'assets/pdfjs/build/pdf.js',
         'pdfjsWorkerSrc'  => $base . 'assets/pdfjs/build/pdf.worker.js',
@@ -38,6 +48,7 @@ class ProLand_PDF_Embed_ESM {
         'defaultPadding'  => 16
     ]);
 }
+
 
 
     public function shortcode($atts) {
