@@ -3,7 +3,7 @@
  * Plugin Name: ProLand PDF Embed (PDF.js ESM, No Toolbar)
  * Description: Embed PDFs using PDF.js (ESM build) without cluttered viewer controls, preserving clickable links.
  * Version: 1.0.0
- * Author: ProLand
+ * Author: Kris Rabai - Veritium Support Services Ltd
  */
 
 if (!defined('ABSPATH')) exit;
