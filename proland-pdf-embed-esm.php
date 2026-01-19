@@ -20,7 +20,7 @@ class ProLand_PDF_Embed_ESM {
         // Register (don’t enqueue globally)
         wp_register_script(
             self::HANDLE,
-            plugin_dir_url(__FILE__) . 'assets/js/pdf-embed.mjs',
+            plugin_dir_url(__FILE__) . 'assets/js/pdf-embed.js',
             [],
             '1.0.0',
             true
@@ -36,8 +36,8 @@ class ProLand_PDF_Embed_ESM {
 
         // Pass paths into the module
         wp_localize_script(self::HANDLE, 'ProLandPdfEmbedESM', [
-            'pdfjsDisplaySrc' => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.mjs',
-            'pdfjsWorkerSrc'  => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.worker.mjs',
+            'pdfjsDisplaySrc' => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.js',
+            'pdfjsWorkerSrc'  => plugin_dir_url(__FILE__) . 'assets/pdfjs/build/pdf.worker.js',
             'defaultMaxWidth' => 1100,
             'defaultPadding'  => 16
         ]);
