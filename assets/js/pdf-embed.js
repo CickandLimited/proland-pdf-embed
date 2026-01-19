@@ -45,25 +45,76 @@ function setStatus(root, html) {
   status.innerHTML = html;
 }
 
-// Minimal link service shim for ESM builds where SimpleLinkService isn't exposed
-function makeLinkService() {
-  return {
-    getDestinationHash(dest) {
-      // internal destinations (not needed for external links)
-      if (!dest) return "";
-      return "#";
-    },
-    getAnchorUrl(hash) {
-      return hash || "#";
-    },
-    goToDestination(dest) {
-      // noop (we're not implementing internal navigation)
-      // external URI links don't rely on this
-    },
-    executeNamedAction(action) {
-      // noop
-    },
-  };
+// Try to extract a URL from various annotation shapes
+function extractUrl(ann) {
+  if (!ann) return null;
+
+  // Common direct fields
+  if (typeof ann.url === "string" && ann.url) return ann.url;
+  if (typeof ann.unsafeUrl === "string" && ann.unsafeUrl) return ann.unsafeUrl;
+
+  // Some builds store it under `A` action dictionary
+  // e.g. ann.A = { S: "URI", URI: "https://..." }
+  if (ann.A && typeof ann.A === "object") {
+    if (ann.A.URI && typeof ann.A.URI === "string") return ann.A.URI;
+  }
+
+  // Some store `action` with `url`
+  if (ann.action && typeof ann.action === "object" && typeof ann.action.url === "string") {
+    return ann.action.url;
+  }
+
+  return null;
+}
+
+// Create clickable overlays for annotations with URLs
+function buildLinkOverlays({ annLayer, annotations, viewport }) {
+  // viewport is the SCALED viewport used to render the canvas
+  // We'll position overlays in canvas pixel coordinates (same as viewport)
+  let count = 0;
+
+  for (const ann of annotations) {
+    const url = extractUrl(ann);
+    if (!url) continue;
+
+    // We need a rect; PDF.js annotations usually include `rect: [x1,y1,x2,y2]` in PDF points
+    const rect = ann.rect;
+    if (!Array.isArray(rect) || rect.length !== 4) continue;
+
+    // Convert PDF rect into viewport pixel rect
+    // convertToViewportRectangle returns [x1, y1, x2, y2] in viewport coords
+    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
+
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const height = Math.abs(y2 - y1);
+
+    // Ignore tiny/invalid rectangles
+    if (!(width > 2 && height > 2)) continue;
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.style.position = "absolute";
+    a.style.left = `${left}px`;
+    a.style.top = `${top}px`;
+    a.style.width = `${width}px`;
+    a.style.height = `${height}px`;
+    a.style.display = "block";
+    a.style.cursor = "pointer";
+    a.style.background = "transparent";
+    a.style.pointerEvents = "auto";
+
+    // Optional: debug outline if you ever need it
+    // a.style.outline = "2px solid rgba(255,0,0,0.35)";
+
+    annLayer.appendChild(a);
+    count++;
+  }
+
+  return count;
 }
 
 async function renderEmbed(root) {
@@ -80,18 +131,12 @@ async function renderEmbed(root) {
 
     setStatus(root, "Loading document…");
 
-    const loadingTask = pdfjsLib.getDocument({
+    const pdf = await pdfjsLib.getDocument({
       url: pdfUrl,
       enableXfa: false,
-    });
-
-    const pdf = await loadingTask.promise;
+    }).promise;
 
     clearStatus(root);
-
-    const annotationStorage = pdfjsLib.AnnotationStorage
-      ? new pdfjsLib.AnnotationStorage()
-      : null;
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -126,65 +171,48 @@ async function renderEmbed(root) {
 
       renderedAnyPage = true;
 
-      // Annotation layer (links + widgets)
-      try {
-        const annLayer = document.createElement("div");
-        annLayer.className = "annotationLayer";
-        annLayer.style.position = "absolute";
-        annLayer.style.left = "0";
-        annLayer.style.top = "0";
-        annLayer.style.width = canvas.width + "px";
-        annLayer.style.height = canvas.height + "px";
-        annLayer.style.transformOrigin = "0 0";
-        annLayer.style.pointerEvents = "auto";
-        annLayer.style.zIndex = "10";
-        pageWrap.appendChild(annLayer);
+      // Overlay layer for clickable links
+      const annLayer = document.createElement("div");
+      annLayer.className = "proland-annotation-layer";
+      annLayer.style.position = "absolute";
+      annLayer.style.left = "0";
+      annLayer.style.top = "0";
+      annLayer.style.width = canvas.width + "px";
+      annLayer.style.height = canvas.height + "px";
+      annLayer.style.transformOrigin = "0 0";
+      annLayer.style.pointerEvents = "auto";
+      annLayer.style.zIndex = "10";
+      pageWrap.appendChild(annLayer);
 
-        const annotations = await page.getAnnotations({ intent: "display" });
+      // Get annotations and create overlays
+      const annotations = await page.getAnnotations({ intent: "display" });
 
-        // Use shim, since SimpleLinkService isn't available in your build
-        const linkService = makeLinkService();
+      // Useful one-time debug (comment out later)
+      console.log(`[ProLand PDF Embed] Page ${pageNum} annotations:`, annotations);
 
-        const renderAnnotationMode =
-          typeof pdfjsLib.AnnotationMode !== "undefined"
-            ? pdfjsLib.AnnotationMode.ENABLE
-            : 1;
+      const linkCount = buildLinkOverlays({
+        annLayer,
+        annotations,
+        viewport: scaledViewport,
+      });
 
-        if (pdfjsLib.AnnotationLayer?.render) {
-          const opts = {
-            viewport: scaledViewport.clone({ dontFlip: true }),
-            div: annLayer,
-            annotations,
-            page,
-            linkService,
-            renderForms: true,
-            mimicDefaultAppearance: true,
-            renderAnnotationMode,
-          };
+      // Keep overlays aligned on responsive resize
+      const resize = () => {
+        const displayedWidth = pageWrap.clientWidth;
+        const factor = displayedWidth / canvas.width;
+        annLayer.style.transform = `scale(${factor})`;
+      };
+      resize();
 
-          // Some versions accept annotationStorage; include if available
-          if (annotationStorage) opts.annotationStorage = annotationStorage;
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(resize).observe(pageWrap);
+      } else {
+        window.addEventListener("resize", resize, { passive: true });
+      }
 
-          pdfjsLib.AnnotationLayer.render(opts);
-        } else {
-          console.warn("ProLand PDF Embed: AnnotationLayer.render not available in this PDF.js build.");
-        }
-
-        // Keep overlay aligned when responsive
-        const resize = () => {
-          const displayedWidth = pageWrap.clientWidth;
-          const factor = displayedWidth / canvas.width;
-          annLayer.style.transform = `scale(${factor})`;
-        };
-        resize();
-
-        if (typeof ResizeObserver !== "undefined") {
-          new ResizeObserver(resize).observe(pageWrap);
-        } else {
-          window.addEventListener("resize", resize, { passive: true });
-        }
-      } catch (annErr) {
-        console.warn("ProLand PDF Embed: annotation layer failed (links may not work).", annErr);
+      // If there were no links detected, that’s fine — PDF may not contain URL annotations
+      if (linkCount === 0) {
+        console.warn(`[ProLand PDF Embed] No URL annotations found on page ${pageNum}.`);
       }
     }
   } catch (err) {
